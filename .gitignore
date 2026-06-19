@@ -3,9 +3,11 @@
 *.xls
 prompt.txt
 
-# ビルド中間物（不要なら除外）
+# ビルド中間物（平文・暗号化前）
 macbeth_sim.xlsx
 macbeth_sim.html
+macbeth_interactive.html
+batch_result.xlsx
 
 # Python
 __pycache__/
