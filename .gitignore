@@ -1,0 +1,12 @@
+# 機密データ・ソース
+*.xlsx
+*.xls
+prompt.txt
+
+# ビルド中間物（不要なら除外）
+macbeth_sim.xlsx
+macbeth_sim.html
+
+# Python
+__pycache__/
+*.pyc
