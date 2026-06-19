@@ -131,6 +131,25 @@ table.tbl tr:hover td{background:#1e2a40}
                cursor:pointer;padding:2px 7px;border-radius:3px;border:1px solid #444}
 .chklist input{accent-color:#e94560}
 
+/* ── csv buttons ──────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;
+     border-radius:4px;border:none;cursor:pointer;font-size:12px;font-weight:bold}
+.btn-export{background:#0f3460;color:#a8d8ea;border:1px solid #3a6a9a}
+.btn-export:hover{background:#1a4a7a}
+.btn-import{background:#1a3a2a;color:#2ecc71;border:1px solid #2ecc71}
+.btn-import:hover{background:#1e4a32}
+.btn-reset{background:#3a1a1a;color:#e74c3c;border:1px solid #e74c3c}
+.btn-reset:hover{background:#4a2222}
+.csv-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.import-box{background:#16213e;border:1px dashed #3a6a9a;border-radius:6px;
+            padding:10px 14px;margin-bottom:10px;font-size:11px}
+.import-box .hint{color:#888;margin-bottom:6px}
+.col-map{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.col-map label{color:#aaa}
+.col-map select{font-size:11px;padding:2px 5px}
+.import-status{color:#2ecc71;font-size:11px;margin-top:6px}
+.import-status.err{color:#e74c3c}
+
 /* ── normalize note ───────────────────────────────────── */
 .note{font-size:11px;color:#888;margin-bottom:8px;padding:6px 10px;
       background:#16213e;border-radius:4px;border-left:3px solid #e94560}
@@ -184,7 +203,7 @@ table.tbl tr:hover td{background:#1e2a40}
   </div>
   <div class="ctrl">
     <label>ガンマ <span class="sub">(0=なし)</span></label>
-    <input type="number" id="g-gamma" value="2.2" min="0" max="4" step="0.1"
+    <input type="number" id="g-gamma" value="1.5" min="0" max="4" step="0.1"
            oninput="onCtrl()">
   </div>
   <div class="ctrl">
@@ -210,6 +229,7 @@ table.tbl tr:hover td{background:#1e2a40}
   <button class="tab active" onclick="showTab('tab-result',this)">🎨 カラーグリッド</button>
   <button class="tab" onclick="showTab('tab-spectra',this)">📊 分光特性グラフ</button>
   <button class="tab" onclick="showTab('tab-opttbl',this)">📋 分光特性テーブル</button>
+  <button class="tab" onclick="showTab('tab-refl',this)">🌈 マクベス反射率</button>
   <button class="tab" onclick="showTab('tab-table',this)">🔢 数値テーブル</button>
 </div>
 
@@ -238,17 +258,56 @@ table.tbl tr:hover td{background:#1e2a40}
 
 <!-- ── TAB: 分光特性テーブル ────────────────────────────── -->
 <div id="tab-opttbl" class="panel">
+  <div class="csv-row">
+    <button class="btn btn-export" onclick="exportOptCsv()">⬇ CSVエクスポート（現在の値）</button>
+    <button class="btn btn-export" onclick="exportOptCsvRaw()">⬇ CSVエクスポート（シフトなし原点）</button>
+  </div>
+  <div class="import-box">
+    <div class="hint">⬆ CSVインポート: 波長列 + 任意の列(cf_r / cf_g / cf_h / lens / ircf)を上書きできます。<br>
+    1行目はヘッダ行。波長列ヘッダは <code>wl</code> または <code>wavelength</code> または <code>波長</code>。</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="file" id="csv-import-file" accept=".csv" onchange="previewCsv(event)">
+      <button class="btn btn-reset" onclick="resetOptData()">↺ データをリセット（元に戻す）</button>
+    </div>
+    <div id="csv-col-map" class="col-map" style="display:none"></div>
+    <div style="margin-top:6px;display:none" id="csv-apply-row">
+      <button class="btn btn-import" onclick="applyImport()">✔ この列マッピングで取り込む</button>
+    </div>
+    <div id="import-status" class="import-status"></div>
+  </div>
   <p style="font-size:11px;color:#888;margin-bottom:8px">
-    シフト・照明光の変化がリアルタイムで反映されます。
-    CFシフト後の値を表示。照明光は最大値で正規化した相対値。
+    スライダーのシフト適用後の値を表示。照明光は最大値で正規化した相対値。
   </p>
   <div class="tbl-wrap">
     <table class="tbl" id="opt-table"></table>
   </div>
 </div>
 
+<!-- ── TAB: マクベス反射率 ───────────────────────────────── -->
+<div id="tab-refl" class="panel">
+  <div class="csv-row">
+    <button class="btn btn-export" onclick="exportReflCsv()">⬇ CSVエクスポート</button>
+    <button class="btn btn-reset" onclick="resetReflData()">↺ リセット（元に戻す）</button>
+  </div>
+  <div class="import-box">
+    <div class="hint">⬆ CSVインポート: 1列目=波長(380〜730nm 10nm刻み)、2列目以降=パッチ反射率。<br>
+    ヘッダ行必須。波長列は <code>wl</code> / <code>wavelength</code> / <code>波長</code>、パッチ列はパッチ名またはNo(1〜24)。</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="file" id="refl-import-file" accept=".csv" onchange="importReflCsv(event)">
+    </div>
+    <div id="refl-import-status" class="import-status"></div>
+  </div>
+  <div class="tbl-wrap">
+    <table class="tbl" id="refl-table"></table>
+  </div>
+</div>
+
 <!-- ── TAB: 数値テーブル ────────────────────────────────── -->
 <div id="tab-table" class="panel">
+  <div class="csv-row">
+    <button class="btn btn-export" onclick="exportNumCsv()">⬇ CSVエクスポート（正規化値＋8bit）</button>
+    <button class="btn btn-export" onclick="exportNumCsvRaw()">⬇ CSVエクスポート（生積分値）</button>
+  </div>
   <div class="note" id="tbl-norm-note"></div>
   <div class="tbl-wrap">
     <table class="tbl" id="num-table"></table>
@@ -580,6 +639,292 @@ function renderNumTable() {
 }
 
 // ════════════════════════════════════════════════════════
+//  CSV EXPORT
+// ════════════════════════════════════════════════════════
+function downloadCsv(filename, rows) {
+  const bom = '﻿';  // UTF-8 BOM for Excel
+  const text = bom + rows.map(r => r.join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type:'text/csv;charset=utf-8'}));
+  a.download = filename;
+  a.click();
+}
+
+function exportOptCsv() {
+  const wl   = DATA.wl_opt;
+  const sh   = getShifts();
+  const ill  = document.getElementById('g-ill').value;
+  const illN = normArr(getIll(wl));
+  const ircf = shiftSpec(wl, DATA.ircf, sh.ircf);
+  const cfR  = shiftSpec(wl, DATA.cf_r, sh.cfR);
+  const cfG  = shiftSpec(wl, DATA.cf_g, sh.cfG);
+  const cfH  = shiftSpec(wl, DATA.cf_h, sh.cfH);
+  const rows = [['wl', `ill_${ill}_norm`, 'lens', 'ircf', 'cf_r', 'cf_g', 'cf_h', 'lens_x_ircf']];
+  for (let i=0; i<wl.length; i++) {
+    rows.push([wl[i], illN[i].toFixed(5), DATA.lens[i].toFixed(5),
+               ircf[i].toFixed(5), cfR[i].toFixed(5), cfG[i].toFixed(5),
+               cfH[i].toFixed(5), (DATA.lens[i]*ircf[i]).toFixed(5)]);
+  }
+  downloadCsv('optical_spectra_shifted.csv', rows);
+}
+
+function exportOptCsvRaw() {
+  const wl  = DATA.wl_opt;
+  const rows = [['wl', 'lens', 'ircf', 'cf_r', 'cf_g', 'cf_h']];
+  for (let i=0; i<wl.length; i++) {
+    rows.push([wl[i], DATA.lens[i].toFixed(5), DATA.ircf[i].toFixed(5),
+               DATA.cf_r[i].toFixed(5), DATA.cf_g[i].toFixed(5), DATA.cf_h[i].toFixed(5)]);
+  }
+  downloadCsv('optical_spectra_raw.csv', rows);
+}
+
+function exportNumCsv() {
+  const res  = simulate();
+  const rows = [['No','patch_name','R_raw','G_raw','B_raw',
+                 'R_norm_lin','G_norm_lin','B_norm_lin','R8','G8','B8']];
+  res.forEach((r,i) => {
+    rows.push([i+1, DATA.patch_names[i],
+               r.R_raw.toFixed(4), r.G_raw.toFixed(4), r.H_raw.toFixed(4),
+               r.Rn.toFixed(5), r.Gn.toFixed(5), r.Hn.toFixed(5),
+               r.R8, r.G8, r.H8]);
+  });
+  downloadCsv('macbeth_result.csv', rows);
+}
+
+function exportNumCsvRaw() {
+  const res  = simulate();
+  const rows = [['No','patch_name','R_raw','G_raw','B_raw']];
+  res.forEach((r,i) => {
+    rows.push([i+1, DATA.patch_names[i],
+               r.R_raw.toFixed(4), r.G_raw.toFixed(4), r.H_raw.toFixed(4)]);
+  });
+  downloadCsv('macbeth_result_raw.csv', rows);
+}
+
+// ════════════════════════════════════════════════════════
+//  TAB: マクベス反射率テーブル
+// ════════════════════════════════════════════════════════
+function renderReflTable() {
+  const wl = DATA.wl_mb;
+  const hdrs = ['波長(nm)', ...DATA.patch_names.map(n => n.replace(/^\d+\s/,''))];
+  let html = '<thead><tr>' + hdrs.map(h=>`<th style="white-space:nowrap">${h}</th>`).join('') + '</tr></thead><tbody>';
+  for (let wi=0; wi<wl.length; wi++) {
+    html += `<tr><td style="color:#a8d8ea;font-weight:bold">${wl[wi]}</td>`;
+    for (let pi=0; pi<DATA.refl.length; pi++) {
+      html += `<td>${DATA.refl[pi][wi].toFixed(4)}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody>';
+  document.getElementById('refl-table').innerHTML = html;
+}
+
+function exportReflCsv() {
+  const wl = DATA.wl_mb;
+  const rows = [['wl', ...DATA.patch_names]];
+  for (let wi=0; wi<wl.length; wi++) {
+    rows.push([wl[wi], ...DATA.refl.map(r => r[wi].toFixed(4))]);
+  }
+  downloadCsv('macbeth_reflectance.csv', rows);
+}
+
+function resetReflData() {
+  for (let pi=0; pi<DATA.refl.length; pi++) {
+    DATA.refl[pi] = DATA_ORIG.refl[pi].slice();
+  }
+  document.getElementById('refl-import-status').className = 'import-status';
+  document.getElementById('refl-import-status').textContent = '元データに戻しました。';
+  document.getElementById('refl-import-file').value = '';
+  renderActive();
+}
+
+function importReflCsv(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const parsed = parseCsvText(ev.target.result);
+    if (!parsed) { showReflStatus('CSVの解析に失敗しました。', true); return; }
+    const {headers, data} = parsed;
+    const wlCol = findWlCol(headers);
+    const csvWl = data.map(r => r[wlCol]);
+
+    // match each CSV column to a patch by name or number
+    let applied = 0;
+    for (let ci=0; ci<headers.length; ci++) {
+      if (ci === wlCol) continue;
+      const h = headers[ci].trim();
+      // try numeric match (patch No)
+      const num = parseInt(h);
+      let pi = -1;
+      if (!isNaN(num) && num >= 1 && num <= 24) {
+        pi = num - 1;
+      } else {
+        // fuzzy name match
+        pi = DATA.patch_names.findIndex(n =>
+          n.toLowerCase().includes(h.toLowerCase()) ||
+          h.toLowerCase().includes(n.replace(/^\d+\s/,'').toLowerCase())
+        );
+      }
+      if (pi < 0) continue;
+      const vals = data.map(r => isNaN(r[ci]) ? 0 : r[ci]);
+      DATA.refl[pi] = lerp(csvWl, vals, DATA.wl_mb);
+      applied++;
+    }
+    if (applied === 0) { showReflStatus('マッチするパッチ列が見つかりませんでした。', true); return; }
+    showReflStatus(`✔ ${applied}パッチの反射率を更新しました。`);
+    renderActive();
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+function showReflStatus(msg, isErr=false) {
+  const el = document.getElementById('refl-import-status');
+  el.className = 'import-status' + (isErr ? ' err' : '');
+  el.textContent = msg;
+}
+
+// ════════════════════════════════════════════════════════
+//  CSV IMPORT
+// ════════════════════════════════════════════════════════
+// Original data backup (set once at init)
+const DATA_ORIG = {};
+let csvParsed = null;  // {headers, wl, cols}
+
+function initOrig() {
+  DATA_ORIG.wl_opt = DATA.wl_opt.slice();
+  DATA_ORIG.cf_r   = DATA.cf_r.slice();
+  DATA_ORIG.cf_g   = DATA.cf_g.slice();
+  DATA_ORIG.cf_h   = DATA.cf_h.slice();
+  DATA_ORIG.lens   = DATA.lens.slice();
+  DATA_ORIG.ircf   = DATA.ircf.slice();
+  DATA_ORIG.refl   = DATA.refl.map(r => r.slice());
+}
+
+function resetOptData() {
+  Object.assign(DATA, DATA_ORIG);
+  DATA.cf_r  = DATA_ORIG.cf_r.slice();
+  DATA.cf_g  = DATA_ORIG.cf_g.slice();
+  DATA.cf_h  = DATA_ORIG.cf_h.slice();
+  DATA.lens  = DATA_ORIG.lens.slice();
+  DATA.ircf  = DATA_ORIG.ircf.slice();
+  document.getElementById('import-status').className = 'import-status';
+  document.getElementById('import-status').textContent = '元データに戻しました。';
+  document.getElementById('csv-col-map').style.display = 'none';
+  document.getElementById('csv-apply-row').style.display = 'none';
+  document.getElementById('csv-import-file').value = '';
+  csvParsed = null;
+  renderActive();
+}
+
+function parseCsvText(text) {
+  const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n')
+    .map(l=>l.trim()).filter(l=>l);
+  if (lines.length < 2) return null;
+  const headers = lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
+  const data = lines.slice(1).map(l => l.split(',').map(v=>parseFloat(v.trim().replace(/^"|"$/g,''))));
+  return {headers, data};
+}
+
+function findWlCol(headers) {
+  const wlNames = ['wl','wavelength','波長','nm','lambda'];
+  for (let i=0; i<headers.length; i++) {
+    if (wlNames.includes(headers[i].toLowerCase())) return i;
+  }
+  return 0;  // fallback: first column
+}
+
+function previewCsv(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const parsed = parseCsvText(ev.target.result);
+    if (!parsed) {
+      showImportStatus('CSVの解析に失敗しました。', true); return;
+    }
+    csvParsed = parsed;
+    buildColMap(parsed.headers);
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+const TARGET_COLS = [
+  {key:'cf_r',  label:'CF-R',  color:'#e74c3c'},
+  {key:'cf_g',  label:'CF-G',  color:'#2ecc71'},
+  {key:'cf_h',  label:'CF-B',  color:'#3498db'},
+  {key:'lens',  label:'レンズ', color:'#b0c4de'},
+  {key:'ircf',  label:'IRCF',  color:'#dda0dd'},
+];
+const COL_ALIASES = {
+  cf_r: ['cf_r','cfr','r','red','cf-r'],
+  cf_g: ['cf_g','cfg','g','green','cf-g'],
+  cf_h: ['cf_h','cfh','b','blue','cf-b','cf_b'],
+  lens: ['lens','lens_t'],
+  ircf: ['ircf','ircf_t'],
+};
+
+function guessCol(headers, key) {
+  const aliases = COL_ALIASES[key] || [key];
+  for (let i=0; i<headers.length; i++) {
+    if (aliases.includes(headers[i].toLowerCase())) return i;
+  }
+  return -1;
+}
+
+function buildColMap(headers) {
+  const mapDiv = document.getElementById('csv-col-map');
+  const applyRow = document.getElementById('csv-apply-row');
+  const opts = ['（使わない）', ...headers].map((h,i) =>
+    `<option value="${i-1}">${h}</option>`).join('');
+
+  mapDiv.innerHTML = TARGET_COLS.map(t => {
+    const guess = guessCol(headers, t.key);
+    const sel = ['（使わない）', ...headers].map((h,i) => {
+      const val = i - 1;
+      const sel = val === guess ? ' selected' : '';
+      return `<option value="${val}"${sel}>${h}</option>`;
+    }).join('');
+    return `<label style="color:${t.color}">${t.label}:
+      <select id="map-${t.key}" style="background:#0f3460;color:#e0e0e0;
+        border:1px solid #444;border-radius:3px;padding:2px 4px;font-size:11px">${sel}</select>
+    </label>`;
+  }).join('');
+
+  mapDiv.style.display = 'flex';
+  applyRow.style.display = 'block';
+  showImportStatus(`${headers.length}列 × ${csvParsed.data.length}行 を読み込みました。列マッピングを確認して「取り込む」を押してください。`);
+}
+
+function applyImport() {
+  if (!csvParsed) return;
+  const {headers, data} = csvParsed;
+  const wlCol = findWlCol(headers);
+  const csvWl = data.map(r => r[wlCol]).filter(v => !isNaN(v));
+  if (csvWl.length === 0) { showImportStatus('波長列が見つかりません。', true); return; }
+
+  let applied = [];
+  TARGET_COLS.forEach(t => {
+    const colIdx = +document.getElementById(`map-${t.key}`).value;
+    if (colIdx < 0) return;
+    const vals = data.map(r => isNaN(r[colIdx]) ? 1.0 : r[colIdx]);
+    // interpolate to DATA.wl_opt grid
+    DATA[t.key] = lerp(csvWl, vals, DATA.wl_opt);
+    applied.push(t.label);
+  });
+
+  if (applied.length === 0) { showImportStatus('取り込む列が1つも選択されていません。', true); return; }
+  showImportStatus(`✔ ${applied.join(', ')} を更新しました（波長: ${csvWl[0]}〜${csvWl[csvWl.length-1]}nm, ${csvWl.length}点 → ${DATA.wl_opt.length}点に補間）`);
+  renderActive();
+}
+
+function showImportStatus(msg, isErr=false) {
+  const el = document.getElementById('import-status');
+  el.className = 'import-status' + (isErr ? ' err' : '');
+  el.textContent = msg;
+}
+
+// ════════════════════════════════════════════════════════
 //  ROUTING
 // ════════════════════════════════════════════════════════
 let activeTab = 'tab-result';
@@ -597,6 +942,7 @@ function renderActive() {
   if (activeTab==='tab-result')  renderResult();
   if (activeTab==='tab-spectra') renderSpectra();
   if (activeTab==='tab-opttbl')  renderOptTable();
+  if (activeTab==='tab-refl')    renderReflTable();
   if (activeTab==='tab-table')   renderNumTable();
 }
 
@@ -605,6 +951,7 @@ function onCtrl() { renderActive(); }
 // ════════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════════
+initOrig();
 buildSpChecklist();
 renderResult();
 </script>
