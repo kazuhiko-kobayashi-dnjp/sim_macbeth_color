@@ -11,7 +11,10 @@ SRC    := macbeth_interactive.html
 OUTDIR := docs
 
 build:
-	python3 build_interactive.py --excel "$(EXCEL)" --out $(SRC)
+	python3 build_interactive.py --excel "$(EXCEL)" --ccm ccm_coef.xlsx --out $(SRC)
+
+batch:
+	python3 batch_export.py --excel "$(EXCEL)" --ccm ccm_coef.xlsx --out batch_result.xlsx
 
 encrypt: build
 	mkdir -p $(OUTDIR)

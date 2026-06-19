@@ -49,6 +49,21 @@ D65_SPD = [50.00,54.65,82.75,91.49,93.43,86.68,104.86,117.01,
            88.18,87.90,83.44,83.84,80.03,80.21,82.28,78.28,
            69.72,71.61,74.35,61.60]
 
+def load_ccm(path):
+    """Read B20:B28 from ccm_coef.xlsx.
+    Order: Rr,Gr,Br, Rg,Gg,Bg, Rb,Gb,Bb
+    Matrix M s.t. [R'G'B'] = [RGB] * M  (row-vector convention)
+    M[i][j]: i=input(R/G/B), j=output(r/g/b)
+    """
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    ws = wb.active
+    vals = [float(r[0]) for r in ws.iter_rows(min_row=20, max_row=28, min_col=2, max_col=2, values_only=True)]
+    wb.close()
+    # reshape to 3x3: row=input(R,G,B), col=output(r,g,b)
+    return [[vals[0], vals[1], vals[2]],
+            [vals[3], vals[4], vals[5]],
+            [vals[6], vals[7], vals[8]]]
+
 def load_optics(path):
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     ws = wb["200921再構築"]
@@ -150,6 +165,21 @@ table.tbl tr:hover td{background:#1e2a40}
 .import-status{color:#2ecc71;font-size:11px;margin-top:6px}
 .import-status.err{color:#e74c3c}
 
+/* ── CCM panel ────────────────────────────────────────── */
+.ccm-panel{background:#16213e;border:1px solid #2a4a6a;border-radius:6px;
+           padding:8px 12px;margin-left:8px;font-size:11px}
+.ccm-panel h3{color:#a8d8ea;font-size:11px;margin-bottom:6px}
+.ccm-matrix{display:grid;grid-template-columns:repeat(4,auto);gap:2px 8px;
+            font-size:11px;font-family:monospace;align-items:center}
+.ccm-matrix .mhdr{color:#888;text-align:center}
+.ccm-matrix .mval{text-align:right;color:#e0e0e0;min-width:52px}
+.ccm-matrix .mval.pos{color:#7ec8e3}
+.ccm-matrix .mval.neg{color:#e08080}
+.ccm-matrix .mrow{color:#a8d8ea;font-weight:bold}
+.ccm-eq{color:#888;font-size:10px;margin-top:4px}
+.toggle-sw{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+.toggle-sw input[type=checkbox]{width:32px;height:17px;accent-color:#e94560;cursor:pointer}
+
 /* ── normalize note ───────────────────────────────────── */
 .note{font-size:11px;color:#888;margin-bottom:8px;padding:6px 10px;
       background:#16213e;border-radius:4px;border-left:3px solid #e94560}
@@ -219,6 +249,19 @@ table.tbl tr:hover td{background:#1e2a40}
       <option value="18" selected>19 white 9.5</option>
       <option value="17">20 neutral 8</option>
     </select>
+  </div>
+  <div class="sep"></div>
+  <div class="ctrl">
+    <label>CCM</label>
+    <label class="toggle-sw">
+      <input type="checkbox" id="g-ccm" onchange="onCtrl()">
+      <span id="ccm-sw-label" style="color:#888">OFF</span>
+    </label>
+  </div>
+  <div class="ccm-panel" id="ccm-panel">
+    <h3>Color Correction Matrix</h3>
+    <div class="ccm-matrix" id="ccm-matrix-display"></div>
+    <div class="ccm-eq">[R' G' B'] = [R G B] × M　　各列和=1（白点保存）</div>
   </div>
 </div>
 
@@ -424,11 +467,22 @@ function simulate() {
   const scaleG = wRef.G;
   const scaleH = norm === 'wb' ? wRef.H : wRef.G;
 
+  const useCcm = document.getElementById('g-ccm').checked;
+  const M = DATA.ccm;  // M[i][j]: input i → output j
+
   return raw.map(r => {
     // linear normalized value × exposure gain
-    const Rn = r.R / scaleR * gain;
-    const Gn = r.G / scaleG * gain;
-    const Hn = r.H / scaleH * gain;
+    let Rn = r.R / scaleR * gain;
+    let Gn = r.G / scaleG * gain;
+    let Hn = r.H / scaleH * gain;
+
+    // CCM: [R'G'B'] = [Rn Gn Hn] * M
+    if (useCcm) {
+      const Rp = Rn*M[0][0] + Gn*M[1][0] + Hn*M[2][0];
+      const Gp = Rn*M[0][1] + Gn*M[1][1] + Hn*M[2][1];
+      const Hp = Rn*M[0][2] + Gn*M[1][2] + Hn*M[2][2];
+      Rn = Rp; Gn = Gp; Hn = Hp;
+    }
 
     // gamma-corrected 8-bit (clipped to [0,1] before power)
     const applyGamma = (v) => {
@@ -443,7 +497,7 @@ function simulate() {
     const H8 = Math.round(Hg * 255);
 
     return {R_raw:r.R, G_raw:r.G, H_raw:r.H,
-            Rn, Gn, Hn,           // linear (for charts)
+            Rn, Gn, Hn,           // linear after CCM (for charts)
             Rg, Gg, Hg,           // gamma-corrected [0-1] (for patch color)
             R8, G8, H8};          // 8-bit
   });
@@ -946,13 +1000,40 @@ function renderActive() {
   if (activeTab==='tab-table')   renderNumTable();
 }
 
-function onCtrl() { renderActive(); }
+function onCtrl() {
+  // update CCM label
+  const on = document.getElementById('g-ccm').checked;
+  document.getElementById('ccm-sw-label').textContent = on ? 'ON' : 'OFF';
+  document.getElementById('ccm-sw-label').style.color = on ? '#e94560' : '#888';
+  renderActive();
+}
+
+function renderCcmMatrix() {
+  const M = DATA.ccm;
+  const labels = ['R','G','B'];
+  const outLabels = ["R'","G'","B'"];
+  let html = '';
+  // header row
+  html += `<div class="mhdr"></div>`;
+  outLabels.forEach(l => html += `<div class="mhdr">${l}</div>`);
+  // data rows
+  for (let i=0; i<3; i++) {
+    html += `<div class="mrow">${labels[i]}</div>`;
+    for (let j=0; j<3; j++) {
+      const v = M[i][j];
+      const cls = v < 0 ? 'neg' : 'pos';
+      html += `<div class="mval ${cls}">${v.toFixed(4)}</div>`;
+    }
+  }
+  document.getElementById('ccm-matrix-display').innerHTML = html;
+}
 
 // ════════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════════
 initOrig();
 buildSpChecklist();
+renderCcmMatrix();
 renderResult();
 </script>
 </body>
@@ -965,11 +1046,14 @@ def build_patch_options():
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--excel", required=True)
+    p.add_argument("--ccm", default="ccm_coef.xlsx")
     p.add_argument("--out", default="macbeth_interactive.html")
     args = p.parse_args()
 
     print(f"Loading {args.excel} ...")
     opt = load_optics(args.excel)
+    print(f"Loading {args.ccm} ...")
+    ccm = load_ccm(args.ccm)
     def r5(lst): return [round(float(v), 5) for v in lst]
 
     data = dict(
@@ -983,6 +1067,7 @@ def main():
         ircf       = r5(opt["ircf"]),
         refl       = [[round(v,4) for v in row] for row in REFL_RAW],
         patch_names= PATCH_NAMES,
+        ccm        = ccm,
     )
     html = HTML.replace("__DATA_JSON__", json.dumps(data))
     html = html.replace("__PATCH_OPTIONS__", build_patch_options())
